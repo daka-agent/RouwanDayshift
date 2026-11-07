@@ -122,6 +122,15 @@ body{background:var(--bg);color:var(--paper);font-family:-apple-system,"PingFang
 /* 空班：屏幕黑着，人不在 */
 .scene.is-empty .pip{opacity:.18}
 .scene.is-empty .pip img{opacity:0}
+/* 交班：白班的人走了，终端屏幕还在待机（画面停在最后一帧，是档案） */
+.scene.is-off .pip{opacity:.3}
+.scene.is-off .pip img{opacity:0}
+/* 档案陈旧：实时信号断了，只剩余旧档案 */
+.scene.is-stale .pip{opacity:.16}
+.scene.is-stale .pip img{opacity:0}
+.scene.is-empty .pip .sig,
+.scene.is-off .pip .sig,
+.scene.is-stale .pip .sig{animation:none;opacity:.18}
 /* 姿态降级（规格 8.2）：不画动作帧，用 transform 区分 */
 .pip.pose-squat img{transform:translateX(-50%) translateY(7px) scaleY(.93)}
 .pip.pose-walk img{transform:translateX(-50%) rotate(-2deg) translateY(1px)}
@@ -142,6 +151,13 @@ body{background:var(--bg);color:var(--paper);font-family:-apple-system,"PingFang
 .hud-bl{position:absolute;left:9px;bottom:8px}
 .hud-bl .rec{animation:blink 1.4s linear infinite}
 @keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.15}}
+/* HUD 右上三态语义：有活动（正在干活）/ 在岗（人在班上，此刻没动）/
+   无人（空班或已交班）/ 离线（档案陈旧，没有实时信号） */
+#hudAct{transition:color .6s ease}
+#hudAct.hud-live{color:var(--hud)}
+#hudAct.hud-idle{color:#6c9a7b}
+#hudAct.hud-none{color:#5f6663}
+#hudAct.hud-off{color:#4a524f}
 .stale{position:absolute;left:9px;top:26px;z-index:10;font-family:ui-monospace,monospace;
   font-size:10px;color:#8a8f8c}
 
@@ -465,7 +481,8 @@ function initState(){
   });
 
   // 初始机位：此刻在干活的机位 → 最后一件事的机位 → CAM-01
-  var live = liveShift(CUR, NOW);
+  // 只有"正在白班"才按此刻判；交班/陈旧看档案最后一件事落在哪台
+  var live = (STATE === "onduty") ? liveShift(CUR, NOW) : null;
   if (live) curCam = live.cam;
   else if (CUR.shifts.length) {
     var last = CUR.shifts[CUR.shifts.length - 1];
@@ -513,6 +530,7 @@ function applyView(){
   // 三态
   s.classList.toggle("is-empty", STATE === "empty");
   s.classList.toggle("is-off", STATE === "off");
+  s.classList.toggle("is-stale", STATE === "stale");
 }
 
 function renderLeaves(){
@@ -654,22 +672,31 @@ function renderClocks(){
 }
 
 function renderPose(){
-  var p = $("pip");
+  var p = $("pip"), hud = $("hudAct");
   // 只换姿态类，不碰 act-* 动画类（否则刚触发的动作动画会被抹掉）
   p.classList.remove("pose-squat", "pose-stand", "pose-walk");
-  var live = liveShift(CUR, NOW);
-  if (STATE === "empty"){
-    $("hudAct").textContent = "无活动";
+  hud.className = "hud-tr";
+
+  // 空班、已交班、档案陈旧：都没有"此刻在这儿的一个人"可看
+  if (STATE === "empty" || STATE === "off" || STATE === "stale"){
+    var stale = (STATE === "stale");
+    hud.textContent = stale ? "离线" : "无人";
+    hud.classList.add(stale ? "hud-off" : "hud-none");
     return;
   }
+
+  var live = liveShift(CUR, NOW);
   if (live){
     if (live.pose === "蹲") p.classList.add("pose-squat");
     else if (live.pose === "走") p.classList.add("pose-walk");
     else p.classList.add("pose-stand");
-    $("hudAct").textContent = "有活动";
+    hud.textContent = "有活动";
+    hud.classList.add("hud-live");
   } else {
+    // 在班，只是此刻没在动 —— 这个岗位上有人，这本身就是他要给的
     p.classList.add("pose-stand");
-    $("hudAct").textContent = "无活动";
+    hud.textContent = "在岗";
+    hud.classList.add("hud-idle");
   }
 }
 
